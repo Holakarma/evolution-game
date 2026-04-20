@@ -1,19 +1,21 @@
-import type { Telegraf } from 'telegraf';
+﻿import type { Telegraf } from 'telegraf';
 import { escapeMarkdownV2 } from '../../../shared/escape-markdown-v2';
 import { ensureUser } from '../ensure-user';
 import type { BotContext } from '../types';
 
-const SINGLE_WORD_ERROR = 'должно быть одно слово';
-const WORD_ENDING_ERROR = 'слово должно заканчиваться на «ция»';
-const WORD_NOT_FOUND_ERROR = 'такого слова нет';
-const WORD_ALREADY_EXISTS_TEMPLATE = 'уже забито *@%s*';
-const WORD_ACCEPTED_MESSAGE = '🔥';
 const NEW_WORD_BROADCAST_TEMPLATE = '*@%s*: новое слово *%s*';
-const WORD_PROCESSING_ERROR = 'Произошла ошибка при обработке слова';
 const LOADING_INDICATOR = '🔍';
+const WORD_ADDED_TEMPLATE = '✅ %s';
+const WORD_REJECTED_TEMPLATE = '❌ %s';
+const WORD_ALREADY_EXISTS_REASON_TEMPLATE = 'слово уже забито @%s';
+const WORD_NOT_FOUND_REASON = 'слова не существует';
 
 const isSingleWord = (value: string): boolean => {
     return value.split(/\s+/u).filter(Boolean).length === 1;
+};
+
+const formatRejectedMessage = (word: string, reason: string): string => {
+    return `${WORD_REJECTED_TEMPLATE.replace('%s', word)}\n${reason}`;
 };
 
 const getUserNameById = async (
@@ -72,6 +74,8 @@ export const registerTextHandler = (bot: Telegraf<BotContext>): void => {
             return;
         }
 
+        const normalizedWord = text.toLowerCase();
+
         let loadingMessageId: number | null = null;
         const deleteLoadingIndicator = async (): Promise<void> => {
             if (loadingMessageId === null) {
@@ -86,6 +90,7 @@ export const registerTextHandler = (bot: Telegraf<BotContext>): void => {
                 loadingMessageId = null;
             }
         };
+
         const replyAfterLoading = async (
             message: string,
             extra?: Parameters<BotContext['reply']>[1],
@@ -97,14 +102,10 @@ export const registerTextHandler = (bot: Telegraf<BotContext>): void => {
         const loadingMessage = await ctx.reply(LOADING_INDICATOR);
         loadingMessageId = loadingMessage.message_id;
 
-        if (!isSingleWord(text)) {
-            await replyAfterLoading(SINGLE_WORD_ERROR);
-            return;
-        }
-
-        const normalizedWord = text.toLowerCase();
-        if (!normalizedWord.endsWith('ция')) {
-            await replyAfterLoading(WORD_ENDING_ERROR);
+        if (!isSingleWord(text) || !normalizedWord.endsWith('ция')) {
+            await replyAfterLoading(
+                WORD_REJECTED_TEMPLATE.replace('%s', normalizedWord),
+            );
             return;
         }
 
@@ -124,14 +125,15 @@ export const registerTextHandler = (bot: Telegraf<BotContext>): void => {
 
             if (existingWord) {
                 const authorName = await getUserNameById(ctx, existingWord.author_id);
-                const message = WORD_ALREADY_EXISTS_TEMPLATE.replace(
-                    '%s',
-                    escapeMarkdownV2(authorName),
+                await replyAfterLoading(
+                    formatRejectedMessage(
+                        normalizedWord,
+                        WORD_ALREADY_EXISTS_REASON_TEMPLATE.replace('%s', authorName),
+                    ),
                 );
-                await replyAfterLoading(message, { parse_mode: 'MarkdownV2' });
                 return;
             }
-            
+
             const relycappLookupResult = await ctx.relycappService.lookup(
                 normalizedWord,
             );
@@ -145,10 +147,11 @@ export const registerTextHandler = (bot: Telegraf<BotContext>): void => {
             }
 
             if (!wordExists) {
-                await replyAfterLoading(WORD_NOT_FOUND_ERROR);
+                await replyAfterLoading(
+                    formatRejectedMessage(normalizedWord, WORD_NOT_FOUND_REASON),
+                );
                 return;
             }
-
 
             const userId = await ensureUser(ctx);
             const { error: insertWordError } = await ctx.supabaseClient
@@ -159,18 +162,20 @@ export const registerTextHandler = (bot: Telegraf<BotContext>): void => {
                 });
 
             if (insertWordError) {
-                throw new Error(
-                    `Failed to save word: ${insertWordError.message}`,
-                );
+                throw new Error(`Failed to save word: ${insertWordError.message}`);
             }
 
-            await replyAfterLoading(WORD_ACCEPTED_MESSAGE);
+            await replyAfterLoading(
+                WORD_ADDED_TEMPLATE.replace('%s', normalizedWord),
+            );
 
             const authorName = await getUserNameById(ctx, userId);
             await broadcastNewWord(ctx, authorName, normalizedWord);
         } catch (error) {
             console.error('Failed to process user word', error);
-            await replyAfterLoading(WORD_PROCESSING_ERROR);
+            await replyAfterLoading(
+                WORD_REJECTED_TEMPLATE.replace('%s', normalizedWord),
+            );
         }
     });
 };
