@@ -3,12 +3,14 @@ import { escapeMarkdownV2 } from '../../../shared/escape-markdown-v2';
 import { ensureUser } from '../ensure-user';
 import type { BotContext } from '../types';
 
-const NEW_WORD_BROADCAST_TEMPLATE = '*@%s*: новое слово *%s*';
+const NEW_WORD_BROADCAST_TEMPLATE = '*@%s*: ✅ *%s*';
 const LOADING_INDICATOR = '🔍';
 const WORD_ADDED_TEMPLATE = '✅ %s';
 const WORD_REJECTED_TEMPLATE = '❌ %s';
 const WORD_ALREADY_EXISTS_REASON_TEMPLATE = 'слово уже забито @%s';
 const WORD_NOT_FOUND_REASON = 'слова не существует';
+const NOT_A_SINGLE_WORD = 'Отправь одно слово';
+const INCORRENT_WORD = 'Слово должно заканчиваться на «ция»';
 
 const isSingleWord = (value: string): boolean => {
     return value.split(/\s+/u).filter(Boolean).length === 1;
@@ -102,10 +104,12 @@ export const registerTextHandler = (bot: Telegraf<BotContext>): void => {
         const loadingMessage = await ctx.reply(LOADING_INDICATOR);
         loadingMessageId = loadingMessage.message_id;
 
-        if (!isSingleWord(text) || !normalizedWord.endsWith('ция')) {
-            await replyAfterLoading(
-                WORD_REJECTED_TEMPLATE.replace('%s', normalizedWord),
-            );
+        if (!isSingleWord(text)) {
+            await replyAfterLoading(NOT_A_SINGLE_WORD);
+            return;
+        }
+        if (!normalizedWord.endsWith('ция')) {
+            await replyAfterLoading(INCORRENT_WORD);
             return;
         }
 
