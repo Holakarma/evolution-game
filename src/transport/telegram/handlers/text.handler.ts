@@ -169,10 +169,6 @@ export const registerTextHandler = (bot: Telegraf<BotContext>): void => {
                 throw new Error(`Failed to save word: ${insertWordError.message}`);
             }
 
-            await replyAfterLoading(
-                WORD_ADDED_TEMPLATE.replace('%s', normalizedWord),
-            );
-
             const authorName = await getUserNameById(ctx, userId);
             await broadcastNewWord(ctx, authorName, normalizedWord);
         } catch (error) {
